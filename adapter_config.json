@@ -1,0 +1,31 @@
+{
+  "base_model_name_or_path": "",
+  "bias": "none",
+  "fan_in_fan_out": false,
+  "inference_mode": false,
+  "lora_alpha": 32,
+  "lora_dropout": 0.0,
+  "r": 8,
+  "target_modules": [
+    "down_proj",
+    "gate_proj",
+    "in_proj_a",
+    "in_proj_b",
+    "in_proj_qkv",
+    "in_proj_z",
+    "k_proj",
+    "o_proj",
+    "out_proj",
+    "q_proj",
+    "up_proj",
+    "v_proj"
+  ],
+  "task_type": "CAUSAL_LM",
+  "peft_type": "LORA",
+  "use_dora": false,
+  "fw_lora_layout": "hf_peft_v1",
+  "fw_moe_lora_a_shared": false,
+  "fw_moe_lora_b_shared": false,
+  "fw_moe_lora_aliases": {},
+  "fw_moe_lora_shared_factors": []
+}

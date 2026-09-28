@@ -1,0 +1,1 @@
+{"checkpoint_format": "HF_LORA_ADAPTER", "checkpoint_kind": "SAMPLING_CHECKPOINT", "commit_time": 1788801459.411386, "commit_time_iso": "2026-09-07T17:17:39.411386Z", "format_version": 1, "trainer_image": "us-chicago-1.ocir.io/axhaeqbjwexc/serving/train-firetitan:0.638.347"}
