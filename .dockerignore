@@ -1,0 +1,7 @@
+.git
+.gitattributes
+.fw_checkpoint_metadata.json
+tests/
+__pycache__/
+*.pyc
+*.md
