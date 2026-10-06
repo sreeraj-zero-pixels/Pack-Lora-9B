@@ -2,14 +2,16 @@
 
 A Fireworks-trained PEFT LoRA adapter (r=8, alpha=32) for the instruct model
 `Qwen/Qwen3.5-9B`, packaged as a Runpod Serverless worker on top of
-`runpod/worker-v1-vllm:v2.28.0` (vLLM 0.30.0, OpenAI-compatible API with Qwen3
-reasoning/tool-call parsing).
+`vllm/vllm-openai:v0.30.0` (OpenAI-compatible API with Qwen3
+reasoning/tool-call parsing, plus the repo-owned `handler.py` Runpod handler
+so the GitHub integration detects `runpod.serverless.start`).
 
-At container start, `src/start.py` locates the base model (Runpod's HF model
-cache, or a one-time `snapshot_download`), merges the adapter into the base
-weights on CPU (`src/merge_lora.py`), writes the merged model to
-`MERGED_MODEL_DIR`, then execs the stock vLLM worker. The merge is fingerprinted,
-so restarts skip it if the output directory persists.
+At container start, `handler.py` calls `src/model_setup.py` to locate the base
+model (Runpod's HF model cache, or a one-time `snapshot_download`), merges the
+adapter into the base weights on CPU (`src/merge_lora.py`), writes the merged
+model to `MERGED_MODEL_DIR`, spawns `vllm serve`, waits for `/health`, then
+starts `runpod.serverless.start({"handler": handler, ...})`. The merge is
+fingerprinted, so restarts skip it if the output directory persists.
 
 ## Deploy on Runpod (GitHub integration)
 
@@ -26,8 +28,8 @@ so restarts skip it if the output directory persists.
 4. Deploy, wait for workers to be ready. First cold start runs the merge
    (~a few minutes); subsequent starts reuse it.
 
-Pushing commits does not redeploy. To trigger a rebuild, push and then create a
-GitHub release.
+To trigger a rebuild after changing the Dockerfile/scripts, push a commit or
+create a GitHub release.
 
 ### Optional: merge only once with a network volume
 
@@ -41,19 +43,17 @@ The merged weights then persist across workers/restarts; the fingerprint marker
 |---|---|---|
 | `BASE_MODEL_ID` | `Qwen/Qwen3.5-9B` | HF repo id of the base model |
 | `BASE_MODEL_REVISION` | — | Pin a base revision/commit |
-| `ADAPTER_DIR` | `/opt/pack-lora/adapter` | Adapter dir baked into the image |
+| `ADAPTER_DIR` | `/app/adapter` | Adapter dir baked into the image |
 | `MERGED_MODEL_DIR` | `/models/qwen3.5-9b-pack-lora` | Where merged weights are written |
 | `HF_TOKEN` | — | For gated base repos |
-| `OPENAI_SERVED_MODEL_NAME_OVERRIDE` | `qwen3.5-9b-pack-lora` | Model name in the OpenAI API |
+| `SERVED_MODEL_NAME` | `qwen3.5-9b-pack-lora` | Model name in the OpenAI API |
 | `MAX_MODEL_LEN` | `16384` | vLLM `--max-model-len` |
 | `GPU_MEMORY_UTILIZATION` | `0.90` | vLLM `--gpu-memory-utilization` |
-| `REASONING_PARSER` | `qwen3` | vLLM reasoning parser |
-| `ENABLE_AUTO_TOOL_CHOICE` | `true` | vLLM tool calling |
-| `TOOL_CALL_PARSER` | `qwen3_coder` | vLLM tool-call parser |
-| `VLLM_STARTUP_TIMEOUT` | `1800` | Worker startup timeout (s) |
-
-Any other `UPPER_SNAKE` env matching a vLLM flag is passed through by the base
-worker image.
+| `MAX_CONCURRENCY` | `16` | Runpod worker concurrency |
+| `VLLM_STARTUP_TIMEOUT` | `1800` | vLLM `/health` wait timeout (s) |
+| `REQUEST_TIMEOUT` | `3600` | Per-request timeout to vLLM (s) |
+| `VLLM_EXTRA_ARGS` | — | Extra `vllm serve` args (e.g. `--language-model-only` to skip loading the vision tower for text-only use) |
+| `VLLM_PORT` | `8000` | Local vLLM listen port |
 
 ## Requests
 
@@ -75,7 +75,7 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)
 ```
 
-Native Runpod `/runsync`:
+Native Runpod `/runsync` (see `test_input.json` for the shape):
 
 ```bash
 curl -X POST "https://api.runpod.ai/v2/<ENDPOINT_ID>/runsync" \
@@ -84,6 +84,18 @@ curl -X POST "https://api.runpod.ai/v2/<ENDPOINT_ID>/runsync" \
   -d '{"input": {"messages": [{"role": "user", "content": "Hello"}],
         "sampling_params": {"temperature": 0.7, "max_tokens": 256}}}'
 ```
+
+Shorthand jobs return the vLLM JSON plus convenience top-level `text` (and
+`reasoning_content` when the model emits thinking). `stream: true` streams raw
+SSE chunks. `max_new_tokens` maps to `max_tokens`; `openai_route`/`openai_input`
+or `route`/`body` proxy arbitrary vLLM endpoints.
+
+## Local testing
+
+On a GPU machine with the image built, `python3 handler.py` loads the model and
+starts the serverless loop; Runpod SDK local mode can feed it
+`test_input.json` (`--test_input`/`rp_input`). `pytest tests/` runs the merge
+and `build_request`/proxy unit tests on CPU.
 
 ## Standalone offline merge
 

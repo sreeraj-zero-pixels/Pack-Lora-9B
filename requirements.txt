@@ -1,0 +1,4 @@
+# vllm, torch, safetensors and huggingface_hub come from the
+# vllm/vllm-openai base image.
+runpod~=1.12.0
+aiohttp>=3.9

@@ -1,0 +1,1 @@
+{"input": {"messages": [{"role": "user", "content": "Give a one-sentence summary of what master data management is."}], "sampling_params": {"max_tokens": 256, "temperature": 0.2}, "chat_template_kwargs": {"enable_thinking": false}}}

@@ -1,9 +1,9 @@
-"""Container entrypoint for the Runpod serverless worker.
+"""Base-model resolution + LoRA merge for the Runpod worker.
 
-Resolves the base model (Runpod HF cache or snapshot_download), merges the
-baked-in LoRA adapter into MERGED_MODEL_DIR (once, cached via fingerprint
-marker), then execs the stock worker-v1-vllm handler at /src/main.py with
-MODEL_NAME pointed at the merged model.
+`prepare_merged_model()` locates the base model (Runpod HF cache or a one-time
+snapshot_download), merges the baked-in adapter into MERGED_MODEL_DIR (skipped
+when the fingerprint marker matches) and returns the merged dir. Called once
+at container start by handler.py.
 """
 
 import json
@@ -16,12 +16,11 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import merge_lora
 
-log = logging.getLogger("start")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("model_setup")
 
 BASE_MODEL_ID = os.environ.get("BASE_MODEL_ID", "Qwen/Qwen3.5-9B")
 BASE_MODEL_REVISION = os.environ.get("BASE_MODEL_REVISION") or None
-ADAPTER_DIR = os.environ.get("ADAPTER_DIR", "/opt/pack-lora/adapter")
+ADAPTER_DIR = os.environ.get("ADAPTER_DIR", "/app/adapter")
 MERGED_MODEL_DIR = os.environ.get("MERGED_MODEL_DIR", "/models/qwen3.5-9b-pack-lora")
 HF_TOKEN = os.environ.get("HF_TOKEN") or None
 
@@ -108,7 +107,8 @@ def resolve_base_dir():
     raise RuntimeError(f"Could not resolve base model {BASE_MODEL_ID}: {last_err}")
 
 
-def main():
+def prepare_merged_model():
+    """Resolve the base model, merge the adapter if needed, return merged dir."""
     t0 = time.time()
     base_dir = resolve_base_dir()
     log.info("Base model dir resolved in %.1fs: %s", time.time() - t0, base_dir)
@@ -122,18 +122,4 @@ def main():
             shutil.rmtree(MERGED_MODEL_DIR)
         merge_lora.merge(base_dir, ADAPTER_DIR, MERGED_MODEL_DIR)
         log.info("Merge finished in %.1fs", time.time() - t1)
-
-    os.environ["MODEL_NAME"] = MERGED_MODEL_DIR
-    os.environ.setdefault(
-        "OPENAI_SERVED_MODEL_NAME_OVERRIDE", "qwen3.5-9b-pack-lora"
-    )
-    log.info("Handing off to worker-v1-vllm with MODEL_NAME=%s", MERGED_MODEL_DIR)
-    os.execvp("python3", ["python3", "/src/main.py"])
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        log.exception("Startup failed")
-        sys.exit(1)
+    return MERGED_MODEL_DIR
